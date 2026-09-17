@@ -79,6 +79,32 @@ final class CameraController: NSObject, ObservableObject {
         }
     }
 
+    /// Tap-to-focus: locks focus (and exposure) onto whatever the user
+    /// tapped in the preview -- e.g. tapping directly on the eyes when the
+    /// default autofocus picked a different part of a close-up face.
+    /// `point` is in the capture device's normalized (0...1) coordinate
+    /// space, already converted from the tap's on-screen location by
+    /// AVCaptureVideoPreviewLayer.
+    func focus(atDevicePoint point: CGPoint) {
+        sessionQueue.async {
+            guard let device = (self.session.inputs.first as? AVCaptureDeviceInput)?.device else { return }
+            do {
+                try device.lockForConfiguration()
+                if device.isFocusPointOfInterestSupported {
+                    device.focusPointOfInterest = point
+                    device.focusMode = .autoFocus
+                }
+                if device.isExposurePointOfInterestSupported {
+                    device.exposurePointOfInterest = point
+                    device.exposureMode = .autoExpose
+                }
+                device.unlockForConfiguration()
+            } catch {
+                // Locking failed (rare) -- focus/exposure just stay as they were.
+            }
+        }
+    }
+
     private nonisolated func saveToPhotoLibrary(data: Data) {
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
             guard status == .authorized || status == .limited else {
@@ -184,18 +210,49 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
     }
 }
 
-/// Bridges AVFoundation's camera preview layer into SwiftUI.
+/// Bridges AVFoundation's camera preview layer into SwiftUI, and turns taps
+/// on the preview into tap-to-focus. `onTap` receives both the tap's
+/// on-screen point (to position a focus reticle) and the corresponding
+/// point in the capture device's coordinate space (to actually set focus).
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
+    var onTap: (_ viewPoint: CGPoint, _ devicePoint: CGPoint) -> Void = { _, _ in }
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.videoPreviewLayer.session = session
         view.videoPreviewLayer.videoGravity = .resizeAspectFill
+
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        view.addGestureRecognizer(tapGesture)
+        context.coordinator.previewView = view
+
         return view
     }
 
-    func updateUIView(_ uiView: PreviewView, context: Context) {}
+    func updateUIView(_ uiView: PreviewView, context: Context) {
+        context.coordinator.onTap = onTap
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onTap: onTap)
+    }
+
+    final class Coordinator: NSObject {
+        var onTap: (_ viewPoint: CGPoint, _ devicePoint: CGPoint) -> Void
+        weak var previewView: PreviewView?
+
+        init(onTap: @escaping (_ viewPoint: CGPoint, _ devicePoint: CGPoint) -> Void) {
+            self.onTap = onTap
+        }
+
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard let previewView else { return }
+            let viewPoint = gesture.location(in: previewView)
+            let devicePoint = previewView.videoPreviewLayer.captureDevicePointConverted(fromLayerPoint: viewPoint)
+            onTap(viewPoint, devicePoint)
+        }
+    }
 
     final class PreviewView: UIView {
         override static var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
@@ -214,6 +271,7 @@ struct CameraView: View {
     @State private var showResults = false
     @State private var resultImage: UIImage?
     @State private var libraryItem: PhotosPickerItem?
+    @State private var focusIndicatorPoint: CGPoint?
 
     var body: some View {
         ZStack {
@@ -232,8 +290,22 @@ struct CameraView: View {
                 }
                 .foregroundStyle(.white)
             } else {
-                CameraPreview(session: controller.session)
-                    .ignoresSafeArea()
+                CameraPreview(session: controller.session) { viewPoint, devicePoint in
+                    controller.focus(atDevicePoint: devicePoint)
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        focusIndicatorPoint = viewPoint
+                    }
+                }
+                .ignoresSafeArea()
+
+                if let focusIndicatorPoint {
+                    Rectangle()
+                        .stroke(Color.yellow, lineWidth: 1.5)
+                        .frame(width: 72, height: 72)
+                        .position(focusIndicatorPoint)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
 
                 if let warning = controller.lightingWarning {
                     VStack {
@@ -286,6 +358,13 @@ struct CameraView: View {
         }
         .onAppear { requestAccessAndStart() }
         .onDisappear { controller.stop() }
+        .onChange(of: focusIndicatorPoint) { _, newValue in
+            guard newValue != nil else { return }
+            Task {
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                withAnimation(.easeIn(duration: 0.2)) { focusIndicatorPoint = nil }
+            }
+        }
         .onChange(of: controller.lastCapturedImage) { _, image in
             guard let image else { return }
             resultImage = image
