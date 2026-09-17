@@ -4,7 +4,7 @@ import SwiftUI
 enum CompositionGuide: String, CaseIterable, Identifiable {
     case off = "Off"
     case thirds = "Rule of Thirds"
-    case goldenRatio = "Golden Ratio"
+    case phiGrid = "Phi Grid"
     case goldenTriangle = "Golden Triangle"
     case diagonals = "Diagonals"
     case goldenSpiral = "Golden Spiral"
@@ -29,11 +29,14 @@ struct CompositionGuideOverlay: View {
                     break
                 case .thirds:
                     drawGrid(context: context, size: size, fractions: [1.0 / 3, 2.0 / 3])
-                case .goldenRatio:
+                case .phiGrid:
+                    // Divide each axis into thirds proportioned 1 : phi : 1
+                    // (~0.276 : 0.447 : 0.276 of the frame), rather than
+                    // plain equal thirds.
                     let phi = (1 + 5.0.squareRoot()) / 2
-                    let a = 1 / phi
+                    let a = 1 / (2 + phi)
                     let b = 1 - a
-                    drawGrid(context: context, size: size, fractions: [b, a])
+                    drawGrid(context: context, size: size, fractions: [a, b])
                 case .goldenTriangle:
                     drawGoldenTriangle(context: context, size: size)
                 case .diagonals:
@@ -48,7 +51,7 @@ struct CompositionGuideOverlay: View {
         .allowsHitTesting(false)
     }
 
-    // MARK: Rule of Thirds / Golden Ratio
+    // MARK: Rule of Thirds / Phi Grid
 
     private func drawGrid(context: GraphicsContext, size: CGSize, fractions: [CGFloat]) {
         let lineColor = Color.white.opacity(0.65)
