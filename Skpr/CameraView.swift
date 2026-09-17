@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import AVFoundation
+import CoreImage
 import Photos
 import PhotosUI
 
@@ -12,9 +13,18 @@ final class CameraController: NSObject, ObservableObject {
     private var isConfigured = false
     private let photoOutput = AVCapturePhotoOutput()
 
+    private let videoOutput = AVCaptureVideoDataOutput()
+    private let videoQueue = DispatchQueue(label: "com.denniscrothers.Skpr.video-frames")
+    private nonisolated(unsafe) let ciContext = CIContext()
+    private nonisolated(unsafe) var lastLightingCheck = Date.distantPast
+
     @Published var lastCapturedImage: UIImage?
     @Published var isCapturing = false
     @Published var saveError: String?
+    /// A short, human-readable heads-up about the current lighting (too
+    /// dark, blown out, backlit), updated live from the preview feed.
+    /// nil means lighting looks fine -- no banner shown.
+    @Published var lightingWarning: String?
 
     func configureIfNeeded() {
         guard !isConfigured else { return }
@@ -33,6 +43,12 @@ final class CameraController: NSObject, ObservableObject {
 
             if self.session.canAddOutput(self.photoOutput) {
                 self.session.addOutput(self.photoOutput)
+            }
+
+            self.videoOutput.alwaysDiscardsLateVideoFrames = true
+            self.videoOutput.setSampleBufferDelegate(self, queue: self.videoQueue)
+            if self.session.canAddOutput(self.videoOutput) {
+                self.session.addOutput(self.videoOutput)
             }
 
             self.session.commitConfiguration()
@@ -108,6 +124,66 @@ extension CameraController: AVCapturePhotoCaptureDelegate {
     }
 }
 
+/// Watches the live preview feed and flags lighting problems -- too dark,
+/// blown out, or backlit (subject silhouetted against a bright background)
+/// -- before the user even presses the shutter.
+extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
+    nonisolated func captureOutput(_ output: AVCaptureOutput,
+                        didOutput sampleBuffer: CMSampleBuffer,
+                        from connection: AVCaptureConnection) {
+        // Checking every single frame would be wasteful -- a few times a
+        // second is plenty to feel "live" without burning battery.
+        let now = Date()
+        guard now.timeIntervalSince(lastLightingCheck) > 0.4 else { return }
+        lastLightingCheck = now
+
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        let fullExtent = ciImage.extent
+        guard fullExtent.width > 0, fullExtent.height > 0 else { return }
+
+        // The center box stands in for "roughly where the pet is" without
+        // needing a full subject-detection pass on every frame.
+        let centerExtent = fullExtent.insetBy(dx: fullExtent.width * 0.25, dy: fullExtent.height * 0.25)
+
+        guard let overall = averageBrightness(of: ciImage, in: fullExtent) else { return }
+        let center = averageBrightness(of: ciImage, in: centerExtent)
+
+        var warning: String?
+        if overall < 0.2 {
+            warning = "Too dark — try turning on a light or moving somewhere brighter."
+        } else if overall > 0.9 {
+            warning = "Too bright — try moving out of direct light."
+        } else if let center, (overall - center) > 0.15 {
+            warning = "Backlit — try repositioning so the light isn't directly behind your pet."
+        }
+
+        DispatchQueue.main.async { self.lightingWarning = warning }
+    }
+
+    /// Renders CIAreaAverage's 1x1 output and converts it to a 0...1 luma
+    /// value (standard perceptual-brightness weighting of R/G/B).
+    private nonisolated func averageBrightness(of image: CIImage, in extent: CGRect) -> CGFloat? {
+        guard let filter = CIFilter(name: "CIAreaAverage", parameters: [
+            kCIInputImageKey: image,
+            kCIInputExtentKey: CIVector(cgRect: extent)
+        ]), let outputImage = filter.outputImage else { return nil }
+
+        var bitmap = [UInt8](repeating: 0, count: 4)
+        ciContext.render(outputImage,
+                          toBitmap: &bitmap,
+                          rowBytes: 4,
+                          bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                          format: .RGBA8,
+                          colorSpace: nil)
+
+        let r = CGFloat(bitmap[0]) / 255
+        let g = CGFloat(bitmap[1]) / 255
+        let b = CGFloat(bitmap[2]) / 255
+        return 0.299 * r + 0.587 * g + 0.114 * b
+    }
+}
+
 /// Bridges AVFoundation's camera preview layer into SwiftUI.
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
@@ -158,6 +234,23 @@ struct CameraView: View {
             } else {
                 CameraPreview(session: controller.session)
                     .ignoresSafeArea()
+
+                if let warning = controller.lightingWarning {
+                    VStack {
+                        Text(warning)
+                            .font(.subheadline)
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(.black.opacity(0.6), in: Capsule())
+                            .padding(.horizontal, 24)
+                            .padding(.top, 12)
+                        Spacer()
+                    }
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.25), value: controller.lightingWarning)
+                }
 
                 VStack {
                     Spacer()
