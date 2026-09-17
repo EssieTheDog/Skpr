@@ -30,13 +30,15 @@ struct CompositionGuideOverlay: View {
                 case .thirds:
                     drawGrid(context: context, size: size, fractions: [1.0 / 3, 2.0 / 3])
                 case .phiGrid:
-                    // Divide each axis into thirds proportioned 1 : phi : 1
-                    // (~0.276 : 0.447 : 0.276 of the frame), rather than
-                    // plain equal thirds.
+                    // Golden ratio ~= 0.618. Line 1 sits at 61.8% from the
+                    // left; line 2 sits at 61.8% from the right (i.e. 38.2%
+                    // from the left). That splits each axis into
+                    // 38.2% : 23.6% : 38.2% -- a narrower center band
+                    // flanked by two wider, equal outer sections.
                     let phi = (1 + 5.0.squareRoot()) / 2
-                    let a = 1 / (2 + phi)
-                    let b = 1 - a
-                    drawGrid(context: context, size: size, fractions: [a, b])
+                    let a = 1 / phi   // 0.618
+                    let b = 1 - a     // 0.382
+                    drawGrid(context: context, size: size, fractions: [b, a])
                 case .goldenTriangle:
                     drawGoldenTriangle(context: context, size: size)
                 case .diagonals:
