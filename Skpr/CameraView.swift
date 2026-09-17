@@ -134,7 +134,7 @@ struct CameraPreview: UIViewRepresentable {
 struct CameraView: View {
     @StateObject private var controller = CameraController()
     @State private var permissionDenied = false
-    @State private var classificationResult = ClassificationResult(species: nil, breedGuesses: [])
+    @State private var detections: [PetDetection] = []
     @State private var showResults = false
     @State private var resultImage: UIImage?
     @State private var libraryItem: PhotosPickerItem?
@@ -197,7 +197,7 @@ struct CameraView: View {
             guard let image else { return }
             resultImage = image
             PetClassifier.classify(image) { result in
-                classificationResult = result
+                detections = result
                 showResults = true
             }
         }
@@ -208,7 +208,7 @@ struct CameraView: View {
                       let image = UIImage(data: data) else { return }
                 await MainActor.run { resultImage = image }
                 PetClassifier.classify(image) { result in
-                    classificationResult = result
+                    detections = result
                     showResults = true
                 }
                 await MainActor.run { libraryItem = nil }
@@ -223,7 +223,7 @@ struct CameraView: View {
             Text(controller.saveError ?? "")
         }
         .sheet(isPresented: $showResults) {
-            BreedResultsView(image: resultImage, result: classificationResult)
+            BreedResultsView(image: resultImage, detections: detections)
         }
     }
 
