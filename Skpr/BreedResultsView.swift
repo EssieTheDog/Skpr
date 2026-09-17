@@ -23,7 +23,7 @@ struct BreedResultsView: View {
                         .font(.headline)
 
                     if guesses.isEmpty {
-                        Text("Couldn't confidently identify a breed from this photo.")
+                        Text("No dog or cat detected in this photo.")
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(guesses) { guess in
