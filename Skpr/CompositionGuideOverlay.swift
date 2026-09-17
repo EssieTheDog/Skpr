@@ -67,16 +67,28 @@ struct CompositionGuideOverlay: View {
 
     // MARK: Diagonals
 
-    /// Both corner-to-corner diagonals, forming an X across the frame.
-    /// The simplest version of the "diagonal method" -- place your subject
-    /// or leading lines along either diagonal for a dynamic composition.
+    /// A true 45-degree line from each of the 4 corners, each running into
+    /// the frame until it hits an edge -- not the corner-to-corner diagonal
+    /// (which is only 45 degrees if the frame happens to be square).
     private func drawDiagonals(context: GraphicsContext, size: CGSize) {
         let lineColor = Color.white.opacity(0.65)
+        let w = size.width, h = size.height
+        let s = min(w, h) // distance traveled before a 45-degree line exits the frame
+
         var path = Path()
+        // Top-left, heading down-right.
         path.move(to: CGPoint(x: 0, y: 0))
-        path.addLine(to: CGPoint(x: size.width, y: size.height))
-        path.move(to: CGPoint(x: size.width, y: 0))
-        path.addLine(to: CGPoint(x: 0, y: size.height))
+        path.addLine(to: CGPoint(x: s, y: s))
+        // Top-right, heading down-left.
+        path.move(to: CGPoint(x: w, y: 0))
+        path.addLine(to: CGPoint(x: w - s, y: s))
+        // Bottom-left, heading up-right.
+        path.move(to: CGPoint(x: 0, y: h))
+        path.addLine(to: CGPoint(x: s, y: h - s))
+        // Bottom-right, heading up-left.
+        path.move(to: CGPoint(x: w, y: h))
+        path.addLine(to: CGPoint(x: w - s, y: h - s))
+
         context.stroke(path, with: .color(lineColor), lineWidth: 1)
     }
 
