@@ -2,6 +2,7 @@ import SwiftUI
 import Combine
 import AVFoundation
 import Photos
+import PhotosUI
 
 /// Owns the capture session: finds the back camera, wires it into a session,
 /// takes photos, and saves them to the user's Photos library.
@@ -135,6 +136,8 @@ struct CameraView: View {
     @State private var permissionDenied = false
     @State private var classificationResult = ClassificationResult(species: nil, breedGuesses: [])
     @State private var showResults = false
+    @State private var resultImage: UIImage?
+    @State private var libraryItem: PhotosPickerItem?
 
     var body: some View {
         ZStack {
@@ -158,18 +161,32 @@ struct CameraView: View {
 
                 VStack {
                     Spacer()
-                    Button(action: { controller.capturePhoto() }) {
-                        ZStack {
-                            Circle()
-                                .strokeBorder(.white, lineWidth: 4)
-                                .frame(width: 74, height: 74)
-                            Circle()
-                                .fill(.white)
-                                .frame(width: 60, height: 60)
-                                .opacity(controller.isCapturing ? 0.4 : 1)
+                    ZStack {
+                        Button(action: { controller.capturePhoto() }) {
+                            ZStack {
+                                Circle()
+                                    .strokeBorder(.white, lineWidth: 4)
+                                    .frame(width: 74, height: 74)
+                                Circle()
+                                    .fill(.white)
+                                    .frame(width: 60, height: 60)
+                                    .opacity(controller.isCapturing ? 0.4 : 1)
+                            }
                         }
+                        .disabled(controller.isCapturing)
+
+                        HStack {
+                            PhotosPicker(selection: $libraryItem, matching: .images) {
+                                Image(systemName: "photo.on.rectangle")
+                                    .font(.title2)
+                                    .foregroundStyle(.white)
+                                    .padding(14)
+                                    .background(.black.opacity(0.4), in: Circle())
+                            }
+                            Spacer()
+                        }
+                        .padding(.leading, 30)
                     }
-                    .disabled(controller.isCapturing)
                     .padding(.bottom, 40)
                 }
             }
@@ -178,9 +195,23 @@ struct CameraView: View {
         .onDisappear { controller.stop() }
         .onChange(of: controller.lastCapturedImage) { _, image in
             guard let image else { return }
+            resultImage = image
             PetClassifier.classify(image) { result in
                 classificationResult = result
                 showResults = true
+            }
+        }
+        .onChange(of: libraryItem) { _, newItem in
+            guard let newItem else { return }
+            Task {
+                guard let data = try? await newItem.loadTransferable(type: Data.self),
+                      let image = UIImage(data: data) else { return }
+                await MainActor.run { resultImage = image }
+                PetClassifier.classify(image) { result in
+                    classificationResult = result
+                    showResults = true
+                }
+                await MainActor.run { libraryItem = nil }
             }
         }
         .alert("Couldn't save photo", isPresented: Binding(
@@ -192,7 +223,7 @@ struct CameraView: View {
             Text(controller.saveError ?? "")
         }
         .sheet(isPresented: $showResults) {
-            BreedResultsView(image: controller.lastCapturedImage, result: classificationResult)
+            BreedResultsView(image: resultImage, result: classificationResult)
         }
     }
 
