@@ -213,12 +213,10 @@ struct CompositionGuideOverlay: View {
     // MARK: Harmonic Armature
 
     /// The classical "armature of the rectangle": both main diagonals, the
-    /// vertical and horizontal center lines, plus every connecting line
-    /// between the 8 points where those lines meet the frame's edges (the
-    /// 4 corners and the 4 edge-midpoints) -- excluding any line that would
-    /// just retrace a piece of the frame itself or duplicate a line already
-    /// drawn. That leaves: a diamond connecting the four edge-midpoints,
-    /// and each corner connected to the two midpoints on its far sides.
+    /// vertical and horizontal center lines, plus each corner connected to
+    /// the two edge-midpoints on the sides it doesn't touch. (The diamond
+    /// connecting the four edge-midpoints to each other is deliberately
+    /// left out.)
     private func drawHarmonicArmature(context: GraphicsContext, size: CGSize) {
         let w = size.width, h = size.height
         let tl = CGPoint(x: 0, y: 0)
@@ -235,8 +233,6 @@ struct CompositionGuideOverlay: View {
             (tl, br), (tr, bl),
             // Vertical and horizontal center lines.
             (tm, bm), (lm, rm),
-            // Diamond connecting the four edge-midpoints.
-            (tm, rm), (rm, bm), (bm, lm), (lm, tm),
             // Each corner to the two midpoints on its far (non-adjacent) sides.
             (tl, rm), (tl, bm),
             (tr, bm), (tr, lm),
