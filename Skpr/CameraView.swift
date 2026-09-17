@@ -133,7 +133,7 @@ struct CameraPreview: UIViewRepresentable {
 struct CameraView: View {
     @StateObject private var controller = CameraController()
     @State private var permissionDenied = false
-    @State private var breedGuesses: [BreedGuess] = []
+    @State private var classificationResult = ClassificationResult(species: nil, breedGuesses: [])
     @State private var showResults = false
 
     var body: some View {
@@ -178,8 +178,8 @@ struct CameraView: View {
         .onDisappear { controller.stop() }
         .onChange(of: controller.lastCapturedImage) { _, image in
             guard let image else { return }
-            PetClassifier.classify(image) { guesses in
-                breedGuesses = guesses
+            PetClassifier.classify(image) { result in
+                classificationResult = result
                 showResults = true
             }
         }
@@ -192,7 +192,7 @@ struct CameraView: View {
             Text(controller.saveError ?? "")
         }
         .sheet(isPresented: $showResults) {
-            BreedResultsView(image: controller.lastCapturedImage, guesses: breedGuesses)
+            BreedResultsView(image: controller.lastCapturedImage, result: classificationResult)
         }
     }
 

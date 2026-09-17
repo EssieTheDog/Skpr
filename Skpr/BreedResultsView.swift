@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Shown right after a photo is captured: the photo itself plus Vision's
-/// best guesses at what breed it is.
+/// Shown right after a photo is captured: the photo, the detected species
+/// (dog/cat), and MobileNetV2's best guesses at the specific breed.
 struct BreedResultsView: View {
     let image: UIImage?
-    let guesses: [BreedGuess]
+    let result: ClassificationResult
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -18,22 +18,39 @@ struct BreedResultsView: View {
                         .padding(.horizontal)
                 }
 
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Best guesses")
-                        .font(.headline)
-
-                    if guesses.isEmpty {
-                        Text("No dog or cat detected in this photo.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(guesses) { guess in
+                VStack(alignment: .leading, spacing: 16) {
+                    if let species = result.species {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Detected")
+                                .font(.headline)
                             HStack {
-                                Text(guess.label)
+                                Text(species.label)
                                 Spacer()
-                                Text("\(Int(guess.confidence * 100))%")
+                                Text("\(Int(species.confidence * 100))%")
                                     .foregroundStyle(.secondary)
                             }
                         }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Best breed guesses")
+                                .font(.headline)
+                            if result.breedGuesses.isEmpty {
+                                Text("Couldn't narrow down a breed from this photo.")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                ForEach(result.breedGuesses) { guess in
+                                    HStack {
+                                        Text(guess.label)
+                                        Spacer()
+                                        Text("\(Int(guess.confidence * 100))%")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Text("No dog or cat detected in this photo.")
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.horizontal)
