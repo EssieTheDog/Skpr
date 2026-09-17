@@ -15,7 +15,7 @@ final class CameraController: NSObject, ObservableObject {
 
     private let videoOutput = AVCaptureVideoDataOutput()
     private let videoQueue = DispatchQueue(label: "com.denniscrothers.Skpr.video-frames")
-    private nonisolated(unsafe) let ciContext = CIContext()
+    private nonisolated let ciContext = CIContext()
     private nonisolated(unsafe) var lastLightingCheck = Date.distantPast
 
     @Published var lastCapturedImage: UIImage?
