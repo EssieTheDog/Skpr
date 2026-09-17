@@ -8,6 +8,7 @@ enum CompositionGuide: String, CaseIterable, Identifiable {
     case goldenTriangle = "Golden Triangle"
     case diagonals = "Diagonals"
     case goldenSpiral = "Golden Spiral"
+    case harmonicArmature = "Harmonic Armature"
 
     var id: String { rawValue }
 }
@@ -39,6 +40,8 @@ struct CompositionGuideOverlay: View {
                     drawDiagonals(context: context, size: size)
                 case .goldenSpiral:
                     drawGoldenSpiral(context: context, size: size)
+                case .harmonicArmature:
+                    drawHarmonicArmature(context: context, size: size)
                 }
             }
         }
@@ -205,5 +208,48 @@ struct CompositionGuideOverlay: View {
 
         context.stroke(linesPath, with: .color(.white.opacity(0.35)), lineWidth: 1)
         context.stroke(curvePath, with: .color(.white.opacity(0.85)), lineWidth: 1.5)
+    }
+
+    // MARK: Harmonic Armature
+
+    /// The classical "armature of the rectangle": both main diagonals, the
+    /// vertical and horizontal center lines, plus every connecting line
+    /// between the 8 points where those lines meet the frame's edges (the
+    /// 4 corners and the 4 edge-midpoints) -- excluding any line that would
+    /// just retrace a piece of the frame itself or duplicate a line already
+    /// drawn. That leaves: a diamond connecting the four edge-midpoints,
+    /// and each corner connected to the two midpoints on its far sides.
+    private func drawHarmonicArmature(context: GraphicsContext, size: CGSize) {
+        let w = size.width, h = size.height
+        let tl = CGPoint(x: 0, y: 0)
+        let tr = CGPoint(x: w, y: 0)
+        let br = CGPoint(x: w, y: h)
+        let bl = CGPoint(x: 0, y: h)
+        let tm = CGPoint(x: w / 2, y: 0)
+        let bm = CGPoint(x: w / 2, y: h)
+        let lm = CGPoint(x: 0, y: h / 2)
+        let rm = CGPoint(x: w, y: h / 2)
+
+        let segments: [(CGPoint, CGPoint)] = [
+            // The two main diagonals.
+            (tl, br), (tr, bl),
+            // Vertical and horizontal center lines.
+            (tm, bm), (lm, rm),
+            // Diamond connecting the four edge-midpoints.
+            (tm, rm), (rm, bm), (bm, lm), (lm, tm),
+            // Each corner to the two midpoints on its far (non-adjacent) sides.
+            (tl, rm), (tl, bm),
+            (tr, bm), (tr, lm),
+            (br, tm), (br, lm),
+            (bl, tm), (bl, rm)
+        ]
+
+        var path = Path()
+        for (start, end) in segments {
+            path.move(to: start)
+            path.addLine(to: end)
+        }
+
+        context.stroke(path, with: .color(.white.opacity(0.5)), lineWidth: 1)
     }
 }
