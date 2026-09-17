@@ -221,7 +221,7 @@ struct CameraPreview: UIViewRepresentable {
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.videoPreviewLayer.session = session
-        view.videoPreviewLayer.videoGravity = .resizeAspectFill
+        view.videoPreviewLayer.videoGravity = .resizeAspect
 
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         view.addGestureRecognizer(tapGesture)
@@ -262,8 +262,9 @@ struct CameraPreview: UIViewRepresentable {
     }
 }
 
-/// The main camera screen: live preview full-screen, a shutter button that
-/// captures + saves a photo, then shows the likely dog breed.
+/// The main camera screen: a 4:3 viewfinder centered vertically on screen,
+/// with the top/bottom black margins holding UI controls, a shutter button
+/// that captures + saves a photo, then shows the likely dog breed.
 struct CameraView: View {
     @StateObject private var controller = CameraController()
     @State private var permissionDenied = false
@@ -275,115 +276,129 @@ struct CameraView: View {
     @State private var compositionGuide: CompositionGuide = .off
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        GeometryReader { geo in
+            let viewfinderWidth = geo.size.width
+            let viewfinderHeight = viewfinderWidth * 4.0 / 3.0
+            let totalMargin = max(0, geo.size.height - viewfinderHeight)
+            let topMargin = totalMargin / 2
+            let bottomMargin = totalMargin - topMargin
 
-            if permissionDenied {
-                VStack(spacing: 12) {
-                    Image(systemName: "camera.fill")
-                        .font(.largeTitle)
-                    Text("Camera access is off")
-                        .font(.headline)
-                    Text("Turn on camera access in Settings to start photographing your pet.")
-                        .font(.subheadline)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-                }
-                .foregroundStyle(.white)
-            } else {
-                CameraPreview(session: controller.session) { viewPoint, devicePoint in
-                    controller.focus(atDevicePoint: devicePoint)
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        focusIndicatorPoint = viewPoint
-                    }
-                }
-                .ignoresSafeArea()
+            ZStack {
+                Color.black
 
-                CompositionGuideOverlay(guide: compositionGuide)
-                    .ignoresSafeArea()
-
-                if let focusIndicatorPoint {
-                    Rectangle()
-                        .stroke(Color.yellow, lineWidth: 1.5)
-                        .frame(width: 72, height: 72)
-                        .position(focusIndicatorPoint)
-                        .transition(.opacity)
-                        .allowsHitTesting(false)
-                }
-
-                if let warning = controller.lightingWarning {
-                    VStack {
-                        Text(warning)
+                if permissionDenied {
+                    VStack(spacing: 12) {
+                        Image(systemName: "camera.fill")
+                            .font(.largeTitle)
+                        Text("Camera access is off")
+                            .font(.headline)
+                        Text("Turn on camera access in Settings to start photographing your pet.")
                             .font(.subheadline)
-                            .foregroundStyle(.white)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(.black.opacity(0.6), in: Capsule())
-                            .padding(.horizontal, 24)
-                            .padding(.top, 12)
-                        Spacer()
+                            .padding(.horizontal, 32)
                     }
-                    .transition(.opacity)
-                    .animation(.easeInOut(duration: 0.25), value: controller.lightingWarning)
-                }
+                    .foregroundStyle(.white)
+                } else {
+                    VStack(spacing: 0) {
+                        // Top black margin: composition-guide menu + lighting warning.
+                        ZStack {
+                            if let warning = controller.lightingWarning {
+                                Text(warning)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .background(.black.opacity(0.6), in: Capsule())
+                                    .padding(.horizontal, 64)
+                                    .transition(.opacity)
+                                    .animation(.easeInOut(duration: 0.25), value: controller.lightingWarning)
+                            }
 
-                VStack {
-                    HStack {
-                        Spacer()
-                        Menu {
-                            ForEach(CompositionGuide.allCases) { option in
-                                Button {
-                                    compositionGuide = option
-                                } label: {
-                                    if compositionGuide == option {
-                                        Label(option.rawValue, systemImage: "checkmark")
-                                    } else {
-                                        Text(option.rawValue)
+                            HStack {
+                                Spacer()
+                                Menu {
+                                    ForEach(CompositionGuide.allCases) { option in
+                                        Button {
+                                            compositionGuide = option
+                                        } label: {
+                                            if compositionGuide == option {
+                                                Label(option.rawValue, systemImage: "checkmark")
+                                            } else {
+                                                Text(option.rawValue)
+                                            }
+                                        }
                                     }
+                                } label: {
+                                    Image(systemName: compositionGuide == .off ? "grid" : "grid.circle.fill")
+                                        .font(.title2)
+                                        .foregroundStyle(.white)
+                                        .padding(14)
+                                        .background(.black.opacity(0.4), in: Circle())
+                                }
+                                .padding(.trailing, 20)
+                            }
+                        }
+                        .frame(width: viewfinderWidth, height: topMargin)
+
+                        // The 4:3 viewfinder -- matches what the photo output
+                        // actually captures, so what you see is what you get
+                        // (no cropped/fill preview mismatch).
+                        ZStack {
+                            CameraPreview(session: controller.session) { viewPoint, devicePoint in
+                                controller.focus(atDevicePoint: devicePoint)
+                                withAnimation(.easeOut(duration: 0.15)) {
+                                    focusIndicatorPoint = viewPoint
                                 }
                             }
-                        } label: {
-                            Image(systemName: compositionGuide == .off ? "grid" : "grid.circle.fill")
-                                .font(.title2)
-                                .foregroundStyle(.white)
-                                .padding(14)
-                                .background(.black.opacity(0.4), in: Circle())
-                        }
-                        .padding(.trailing, 20)
-                        .padding(.top, 8)
-                    }
-                    Spacer()
-                    ZStack {
-                        Button(action: { controller.capturePhoto() }) {
-                            ZStack {
-                                Circle()
-                                    .strokeBorder(.white, lineWidth: 4)
-                                    .frame(width: 74, height: 74)
-                                Circle()
-                                    .fill(.white)
-                                    .frame(width: 60, height: 60)
-                                    .opacity(controller.isCapturing ? 0.4 : 1)
-                            }
-                        }
-                        .disabled(controller.isCapturing)
 
-                        HStack {
-                            PhotosPicker(selection: $libraryItem, matching: .images) {
-                                Image(systemName: "photo.on.rectangle")
-                                    .font(.title2)
-                                    .foregroundStyle(.white)
-                                    .padding(14)
-                                    .background(.black.opacity(0.4), in: Circle())
+                            CompositionGuideOverlay(guide: compositionGuide)
+
+                            if let focusIndicatorPoint {
+                                Rectangle()
+                                    .stroke(Color.yellow, lineWidth: 1.5)
+                                    .frame(width: 72, height: 72)
+                                    .position(focusIndicatorPoint)
+                                    .transition(.opacity)
+                                    .allowsHitTesting(false)
                             }
-                            Spacer()
                         }
-                        .padding(.leading, 30)
+                        .frame(width: viewfinderWidth, height: viewfinderHeight)
+                        .clipped()
+
+                        // Bottom black margin: shutter + photo-library picker.
+                        ZStack {
+                            Button(action: { controller.capturePhoto() }) {
+                                ZStack {
+                                    Circle()
+                                        .strokeBorder(.white, lineWidth: 4)
+                                        .frame(width: 74, height: 74)
+                                    Circle()
+                                        .fill(.white)
+                                        .frame(width: 60, height: 60)
+                                        .opacity(controller.isCapturing ? 0.4 : 1)
+                                }
+                            }
+                            .disabled(controller.isCapturing)
+
+                            HStack {
+                                PhotosPicker(selection: $libraryItem, matching: .images) {
+                                    Image(systemName: "photo.on.rectangle")
+                                        .font(.title2)
+                                        .foregroundStyle(.white)
+                                        .padding(14)
+                                        .background(.black.opacity(0.4), in: Circle())
+                                }
+                                Spacer()
+                            }
+                            .padding(.leading, 30)
+                        }
+                        .frame(width: viewfinderWidth, height: bottomMargin)
                     }
-                    .padding(.bottom, 40)
                 }
             }
         }
+        .ignoresSafeArea()
         .onAppear { requestAccessAndStart() }
         .onDisappear { controller.stop() }
         .onChange(of: focusIndicatorPoint) { _, newValue in
