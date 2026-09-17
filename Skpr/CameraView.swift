@@ -272,6 +272,7 @@ struct CameraView: View {
     @State private var resultImage: UIImage?
     @State private var libraryItem: PhotosPickerItem?
     @State private var focusIndicatorPoint: CGPoint?
+    @State private var compositionGuide: CompositionGuide = .off
 
     var body: some View {
         ZStack {
@@ -297,6 +298,9 @@ struct CameraView: View {
                     }
                 }
                 .ignoresSafeArea()
+
+                CompositionGuideOverlay(guide: compositionGuide)
+                    .ignoresSafeArea()
 
                 if let focusIndicatorPoint {
                     Rectangle()
@@ -325,6 +329,30 @@ struct CameraView: View {
                 }
 
                 VStack {
+                    HStack {
+                        Spacer()
+                        Menu {
+                            ForEach(CompositionGuide.allCases) { option in
+                                Button {
+                                    compositionGuide = option
+                                } label: {
+                                    if compositionGuide == option {
+                                        Label(option.rawValue, systemImage: "checkmark")
+                                    } else {
+                                        Text(option.rawValue)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Image(systemName: compositionGuide == .off ? "grid" : "grid.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(.white)
+                                .padding(14)
+                                .background(.black.opacity(0.4), in: Circle())
+                        }
+                        .padding(.trailing, 20)
+                        .padding(.top, 8)
+                    }
                     Spacer()
                     ZStack {
                         Button(action: { controller.capturePhoto() }) {
