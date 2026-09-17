@@ -257,8 +257,9 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Skpr needs camera access to help you photograph your pet.";
 				INFOPLIST_KEY_CFBundleDisplayName = Skpr;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Skpr needs camera access to help you photograph your pet.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Skpr saves the photos you take of your pet to your library.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -298,8 +299,9 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Skpr needs camera access to help you photograph your pet.";
 				INFOPLIST_KEY_CFBundleDisplayName = Skpr;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Skpr needs camera access to help you photograph your pet.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Skpr saves the photos you take of your pet to your library.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;

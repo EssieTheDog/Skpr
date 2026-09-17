@@ -1,14 +1,19 @@
 import SwiftUI
 import Combine
 import AVFoundation
+import Photos
 
 /// Owns the capture session: finds the back camera, wires it into a session,
-/// and starts/stops running on a background queue (AVFoundation requires this
-/// off the main thread).
+/// takes photos, and saves them to the user's Photos library.
 final class CameraController: NSObject, ObservableObject {
     let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.denniscrothers.Skpr.camera-session")
     private var isConfigured = false
+    private let photoOutput = AVCapturePhotoOutput()
+
+    @Published var lastCapturedImage: UIImage?
+    @Published var isCapturing = false
+    @Published var saveError: String?
 
     func configureIfNeeded() {
         guard !isConfigured else { return }
@@ -24,6 +29,11 @@ final class CameraController: NSObject, ObservableObject {
                 return
             }
             self.session.addInput(input)
+
+            if self.session.canAddOutput(self.photoOutput) {
+                self.session.addOutput(self.photoOutput)
+            }
+
             self.session.commitConfiguration()
         }
     }
@@ -42,6 +52,58 @@ final class CameraController: NSObject, ObservableObject {
                 self.session.stopRunning()
             }
         }
+    }
+
+    func capturePhoto() {
+        isCapturing = true
+        let settings = AVCapturePhotoSettings()
+        sessionQueue.async {
+            self.photoOutput.capturePhoto(with: settings, delegate: self)
+        }
+    }
+
+    private func saveToPhotoLibrary(data: Data) {
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            guard status == .authorized || status == .limited else {
+                DispatchQueue.main.async {
+                    self.saveError = "Photo library access is off, so the photo wasn't saved. Turn it on in Settings to save your pet's photos."
+                }
+                return
+            }
+
+            PHPhotoLibrary.shared().performChanges({
+                let request = PHAssetCreationRequest.forAsset()
+                request.addResource(with: .photo, data: data, options: nil)
+            }) { success, error in
+                if !success {
+                    DispatchQueue.main.async {
+                        self.saveError = error?.localizedDescription ?? "Couldn't save the photo."
+                    }
+                }
+            }
+        }
+    }
+}
+
+extension CameraController: AVCapturePhotoCaptureDelegate {
+    nonisolated func photoOutput(_ output: AVCapturePhotoOutput,
+                      didFinishProcessingPhoto photo: AVCapturePhoto,
+                      error: Error?) {
+        DispatchQueue.main.async { self.isCapturing = false }
+
+        if let error {
+            DispatchQueue.main.async { self.saveError = error.localizedDescription }
+            return
+        }
+
+        guard let data = photo.fileDataRepresentation(),
+              let image = UIImage(data: data) else { return }
+
+        DispatchQueue.main.async {
+            self.lastCapturedImage = image
+        }
+
+        saveToPhotoLibrary(data: data)
     }
 }
 
@@ -66,11 +128,13 @@ struct CameraPreview: UIViewRepresentable {
     }
 }
 
-/// The main camera screen: live preview full-screen, with a placeholder
-/// shutter button. Handles asking for camera permission the first time.
+/// The main camera screen: live preview full-screen, a shutter button that
+/// captures + saves a photo, then shows the likely dog breed.
 struct CameraView: View {
     @StateObject private var controller = CameraController()
     @State private var permissionDenied = false
+    @State private var breedGuesses: [BreedGuess] = []
+    @State private var showResults = false
 
     var body: some View {
         ZStack {
@@ -94,15 +158,42 @@ struct CameraView: View {
 
                 VStack {
                     Spacer()
-                    Circle()
-                        .strokeBorder(.white, lineWidth: 4)
-                        .frame(width: 74, height: 74)
-                        .padding(.bottom, 40)
+                    Button(action: { controller.capturePhoto() }) {
+                        ZStack {
+                            Circle()
+                                .strokeBorder(.white, lineWidth: 4)
+                                .frame(width: 74, height: 74)
+                            Circle()
+                                .fill(.white)
+                                .frame(width: 60, height: 60)
+                                .opacity(controller.isCapturing ? 0.4 : 1)
+                        }
+                    }
+                    .disabled(controller.isCapturing)
+                    .padding(.bottom, 40)
                 }
             }
         }
         .onAppear { requestAccessAndStart() }
         .onDisappear { controller.stop() }
+        .onChange(of: controller.lastCapturedImage) { image in
+            guard let image else { return }
+            PetClassifier.classify(image) { guesses in
+                breedGuesses = guesses
+                showResults = true
+            }
+        }
+        .alert("Couldn't save photo", isPresented: Binding(
+            get: { controller.saveError != nil },
+            set: { if !$0 { controller.saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(controller.saveError ?? "")
+        }
+        .sheet(isPresented: $showResults) {
+            BreedResultsView(image: controller.lastCapturedImage, guesses: breedGuesses)
+        }
     }
 
     private func requestAccessAndStart() {
