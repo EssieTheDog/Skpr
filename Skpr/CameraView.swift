@@ -62,7 +62,7 @@ final class CameraController: NSObject, ObservableObject {
         }
     }
 
-    private func saveToPhotoLibrary(data: Data) {
+    private nonisolated func saveToPhotoLibrary(data: Data) {
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
             guard status == .authorized || status == .limited else {
                 DispatchQueue.main.async {
@@ -176,7 +176,7 @@ struct CameraView: View {
         }
         .onAppear { requestAccessAndStart() }
         .onDisappear { controller.stop() }
-        .onChange(of: controller.lastCapturedImage) { image in
+        .onChange(of: controller.lastCapturedImage) { _, image in
             guard let image else { return }
             PetClassifier.classify(image) { guesses in
                 breedGuesses = guesses
