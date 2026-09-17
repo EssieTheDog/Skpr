@@ -112,85 +112,98 @@ struct CompositionGuideOverlay: View {
 
     // MARK: Golden Spiral
 
-    /// Approximates the classic Fibonacci/golden spiral: repeatedly cut the
-    /// largest possible square off the current rectangle's longer side,
-    /// alternating which end each time so the squares wind inward, and
-    /// trace a quarter-circle (via a standard Bezier approximation) across
-    /// each square. Phone screens aren't golden-ratio proportioned, so this
-    /// is an approximation rather than a mathematically perfect spiral --
-    /// but it still traces the same nested, winding shape used to guide
-    /// the eye toward a focal point.
+    /// The classic Fibonacci spiral: repeatedly cut the largest possible
+    /// square off the current rectangle's longer side. Which end each cut
+    /// comes from alternates independently per axis (horizontal cuts go
+    /// left, right, left, right...; vertical cuts go bottom, top, bottom,
+    /// top...), which is what makes consecutive squares wind in a single
+    /// consistent direction instead of bouncing around. Verified by hand
+    /// against the standard 1,1,2,3,5,8,13 square-Fibonacci construction.
+    /// Draws both the nested-square subdivision lines and the curved arc
+    /// that winds through them.
     private func drawGoldenSpiral(context: GraphicsContext, size: CGSize) {
+        enum CutSide { case left, right, top, bottom }
+
         var rect = CGRect(origin: .zero, size: size)
-        var path = Path()
-        var cutFromFarEnd = false
-        var isFirstSegment = true
+        var nextHorizontalFromRight = false // horizontal cuts: left, right, left, right...
+        var nextVerticalFromBottom = true   // vertical cuts: bottom, top, bottom, top...
 
-        for _ in 0..<7 {
+        var linesPath = Path()
+        var curvePath = Path()
+        var isFirstSquare = true
+
+        for _ in 0..<8 {
             let side = min(rect.width, rect.height)
-            guard side > 8 else { break }
+            guard side > 6 else { break }
 
-            let cutHorizontally = rect.width >= rect.height
+            let cutSide: CutSide
+            if rect.width >= rect.height {
+                cutSide = nextHorizontalFromRight ? .right : .left
+                nextHorizontalFromRight.toggle()
+            } else {
+                cutSide = nextVerticalFromBottom ? .bottom : .top
+                nextVerticalFromBottom.toggle()
+            }
+
             let square: CGRect
             let remaining: CGRect
+            let dividerStart: CGPoint
+            let dividerEnd: CGPoint
 
-            if cutHorizontally {
-                if !cutFromFarEnd {
-                    square = CGRect(x: rect.minX, y: rect.minY, width: side, height: side)
-                    remaining = CGRect(x: rect.minX + side, y: rect.minY, width: rect.width - side, height: rect.height)
-                } else {
-                    square = CGRect(x: rect.maxX - side, y: rect.minY, width: side, height: side)
-                    remaining = CGRect(x: rect.minX, y: rect.minY, width: rect.width - side, height: rect.height)
-                }
-            } else {
-                if !cutFromFarEnd {
-                    square = CGRect(x: rect.minX, y: rect.minY, width: side, height: side)
-                    remaining = CGRect(x: rect.minX, y: rect.minY + side, width: rect.width, height: rect.height - side)
-                } else {
-                    square = CGRect(x: rect.minX, y: rect.maxY - side, width: side, height: side)
-                    remaining = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height - side)
-                }
+            switch cutSide {
+            case .left:
+                square = CGRect(x: rect.minX, y: rect.minY, width: side, height: side)
+                remaining = CGRect(x: rect.minX + side, y: rect.minY, width: rect.width - side, height: rect.height)
+                dividerStart = CGPoint(x: rect.minX + side, y: rect.minY)
+                dividerEnd = CGPoint(x: rect.minX + side, y: rect.minY + side)
+            case .right:
+                square = CGRect(x: rect.maxX - side, y: rect.minY, width: side, height: side)
+                remaining = CGRect(x: rect.minX, y: rect.minY, width: rect.width - side, height: rect.height)
+                dividerStart = CGPoint(x: rect.maxX - side, y: rect.minY)
+                dividerEnd = CGPoint(x: rect.maxX - side, y: rect.minY + side)
+            case .bottom:
+                square = CGRect(x: rect.minX, y: rect.maxY - side, width: side, height: side)
+                remaining = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height - side)
+                dividerStart = CGPoint(x: rect.minX, y: rect.maxY - side)
+                dividerEnd = CGPoint(x: rect.minX + side, y: rect.maxY - side)
+            case .top:
+                square = CGRect(x: rect.minX, y: rect.minY, width: side, height: side)
+                remaining = CGRect(x: rect.minX, y: rect.minY + side, width: rect.width, height: rect.height - side)
+                dividerStart = CGPoint(x: rect.minX, y: rect.minY + side)
+                dividerEnd = CGPoint(x: rect.minX + side, y: rect.minY + side)
             }
+
+            linesPath.move(to: dividerStart)
+            linesPath.addLine(to: dividerEnd)
 
             let topLeft = CGPoint(x: square.minX, y: square.minY)
             let topRight = CGPoint(x: square.maxX, y: square.minY)
             let bottomLeft = CGPoint(x: square.minX, y: square.maxY)
             let bottomRight = CGPoint(x: square.maxX, y: square.maxY)
 
-            // Pick the arc's pivot corner and endpoints so the curve winds
-            // consistently as the cut direction alternates.
-            let center: CGPoint
-            let start: CGPoint
-            let end: CGPoint
-            if cutHorizontally {
-                if !cutFromFarEnd {
-                    center = bottomRight; start = topRight; end = bottomLeft
-                } else {
-                    center = bottomLeft; start = topLeft; end = bottomRight
-                }
-            } else {
-                if !cutFromFarEnd {
-                    center = bottomRight; start = bottomLeft; end = topRight
-                } else {
-                    center = topRight; start = topLeft; end = bottomRight
-                }
+            // Verified mapping: which corner is the arc's pivot/center, and
+            // which two (always diagonal to each other) are its endpoints.
+            let pivot: CGPoint, entry: CGPoint, exit: CGPoint
+            switch cutSide {
+            case .left:   pivot = topLeft;     entry = bottomLeft; exit = topRight
+            case .right:  pivot = bottomRight; entry = topRight;   exit = bottomLeft
+            case .bottom: pivot = bottomLeft;  entry = bottomRight; exit = topLeft
+            case .top:    pivot = topRight;    entry = topLeft;    exit = bottomRight
             }
 
-            let cp1 = CGPoint(x: start.x + kappa * (end.x - center.x), y: start.y + kappa * (end.y - center.y))
-            let cp2 = CGPoint(x: end.x + kappa * (start.x - center.x), y: end.y + kappa * (start.y - center.y))
+            let cp1 = CGPoint(x: entry.x + kappa * (exit.x - pivot.x), y: entry.y + kappa * (exit.y - pivot.y))
+            let cp2 = CGPoint(x: exit.x + kappa * (entry.x - pivot.x), y: exit.y + kappa * (entry.y - pivot.y))
 
-            if isFirstSegment {
-                path.move(to: start)
-                isFirstSegment = false
-            } else {
-                path.addLine(to: start)
+            if isFirstSquare {
+                curvePath.move(to: entry)
+                isFirstSquare = false
             }
-            path.addCurve(to: end, control1: cp1, control2: cp2)
+            curvePath.addCurve(to: exit, control1: cp1, control2: cp2)
 
             rect = remaining
-            cutFromFarEnd.toggle()
         }
 
-        context.stroke(path, with: .color(.white.opacity(0.75)), lineWidth: 1.5)
+        context.stroke(linesPath, with: .color(.white.opacity(0.35)), lineWidth: 1)
+        context.stroke(curvePath, with: .color(.white.opacity(0.85)), lineWidth: 1.5)
     }
 }
